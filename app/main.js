@@ -1,5 +1,7 @@
 const net = require("net");
 
+// net.Server is event-driven and non-blocking, so it can handle 
+// multiple connections at the same time at least in the mean time :)
 const server = net.createServer((connection) => {
     let buffer = "";
     connection.on("data", (data) => {
