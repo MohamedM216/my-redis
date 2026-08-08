@@ -19,11 +19,4 @@ const server = net.createServer((connection) => {
     });
 });
 
-/*
- * run: redis-cli -h 127.0.0.1 -p 6380 ping
- * or: nc 127.0.0.1 6380
- * or: printf "PING\r\n" | nc -w 1 127.0.0.1 6380
- * or: telnet 127.0.0.1 6380
- * I prefere to run: printf "PING\r\nPING\r\n" | nc -w 1 127.0.0.1 6380
- */
 server.listen(6380, "127.0.0.1");
