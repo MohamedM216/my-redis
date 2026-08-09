@@ -158,8 +158,9 @@ function encodeBulkString(value) {
   ]);
 }
 
-function executeCommand(rawCommand, connection) {
+function executeCommand(rawCommand, connection, clientInfo) {
   if (rawCommand === null || rawCommand === undefined) {
+    console.log(`[EXEC][${clientInfo}] Error: invalid command`);
     connection.write("-ERR invalid command\r\n");
     return;
   }
@@ -167,28 +168,35 @@ function executeCommand(rawCommand, connection) {
   const args = Array.isArray(rawCommand) ? rawCommand : [rawCommand];
 
   if (args.length === 0) {
+    console.log(`[EXEC][${clientInfo}] Error: empty command`);
     connection.write("-ERR empty command\r\n");
     return;
   }
 
   const commandArg = toBuffer(args[0]);
   const commandName = commandArg.toString("utf8").toUpperCase();
+  console.log(`[EXEC][${clientInfo}] Command: ${commandName} | Args: ${args.length - 1}`);
 
   if (commandName === "PING") {
     if (args.length === 1) {
+      console.log(`[-->][${clientInfo}] Response: +PONG`);
       connection.write("+PONG\r\n");
     } else {
       // Redis allows PING with a message.
+      console.log(`[-->][${clientInfo}] Response: Bulk string (PING with message)`);
       connection.write(encodeBulkString(args[1]));
     }
   } else if (commandName === "ECHO") {
     if (args.length !== 2) {
+      console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
       connection.write("-ERR wrong number of arguments for 'echo' command\r\n");
       return;
     }
-
+    const echoVal = args[1].toString('utf8');
+    console.log(`[-->][${clientInfo}] Response: Bulk string ("${echoVal.substring(0, 20)}${echoVal.length > 20 ? '...' : ''}")`);
     connection.write(encodeBulkString(args[1]));
   } else {
+    console.log(`[-->][${clientInfo}] Response: Error (unknown command)`);
     connection.write(
       `-ERR unknown command '${commandArg.toString("utf8")}'\r\n`
     );
@@ -196,9 +204,15 @@ function executeCommand(rawCommand, connection) {
 }
 
 const server = net.createServer((connection) => {
+  const clientIp = connection.remoteAddress;
+  const clientPort = connection.remotePort;
+  const clientInfo = `${clientIp}:${clientPort}`;
+  console.log(`\n[+] Client connected: ${clientInfo}`);
+
   let buffer = Buffer.alloc(0);
 
   connection.on("data", (chunk) => {
+    console.log(`[<--][${clientInfo}] Received ${chunk.length} bytes`);
     buffer = Buffer.concat([buffer, chunk]);
 
     while (buffer.length > 0) {
@@ -208,37 +222,47 @@ const server = net.createServer((connection) => {
         const crlfIndex = buffer.indexOf(CRLF);
 
         if (crlfIndex === -1) {
+          console.log(`[...][${clientInfo}] Waiting for more data (inline)...`);
           break;
         }
 
         const line = buffer.toString("utf8", 0, crlfIndex).trim();
         buffer = buffer.subarray(crlfIndex + 2);
 
-        if (line.length === 0) {
-          continue;
-        }
+        if (line.length === 0) continue;
+
+        console.log(`[PARSER][${clientInfo}] Parsed inline command: "${line}"`);
 
         const args = line.split(/\s+/).map((part) => Buffer.from(part));
-        executeCommand(args, connection);
+        executeCommand(args, connection, clientInfo);
         continue;
       }
 
       const parsed = parseResp(buffer, 0);
 
       if (parsed === null) {
-        // Incomplete command. Wait for more data.
+        console.log(`[...][${clientInfo}] Waiting for more data (RESP incomplete)...`);
         break;
       }
 
       if (parsed.error) {
+        console.log(`[!][${clientInfo}] Parser error: ${parsed.error}`);
         connection.write(`-ERR ${parsed.error}\r\n`);
         connection.end();
         return;
       }
+      const readableParsed = Array.isArray(parsed.value) 
+        ? parsed.value.map(v => v ? v.toString() : v) 
+        : parsed.value;
+      console.log(`[PARSER][${clientInfo}] Successfully parsed RESP:`, readableParsed);
 
       buffer = buffer.subarray(parsed.nextOffset);
-      executeCommand(parsed.value, connection);
+      executeCommand(parsed.value, connection, clientInfo);
     }
+  });
+
+  connection.on("end", () => {
+    console.log(`[-][${clientInfo}] Client disconnected`);
   });
 
   connection.on("error", (error) => {
@@ -246,4 +270,6 @@ const server = net.createServer((connection) => {
   });
 });
 
-server.listen(6380, "127.0.0.1");
+server.listen(6380, "127.0.0.1", () => {
+  console.log("[*] Server listening on 127.0.0.1:6380");
+});
