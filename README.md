@@ -54,3 +54,17 @@ hey
 |[...] | When the parser is waiting for more TCP data.|
 |[PARSER] | When a command is successfully extracted.|
 |[EXEC] / [-->] | What command is running and what response is being sent back.|
+
+## docs
+- ECHO
+```
+redis-cli -h 127.0.0.1 -p 6380 ping "optional message"
+```
+- SET command
+```
+redis-cli -h 127.0.0.1 -p 6380 set key value
+```
+- GET command
+```
+redis-cli -h 127.0.0.1 -p 6380 get key
+```

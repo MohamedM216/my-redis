@@ -1,4 +1,5 @@
-const net = require("net");
+import net from "net";
+import { cacheSet, cacheGet } from "./cache.js";
 
 const CRLF = Buffer.from("\r\n");
 const CR = 13;
@@ -195,6 +196,30 @@ function executeCommand(rawCommand, connection, clientInfo) {
     const echoVal = args[1].toString('utf8');
     console.log(`[-->][${clientInfo}] Response: Bulk string ("${echoVal.substring(0, 20)}${echoVal.length > 20 ? '...' : ''}")`);
     connection.write(encodeBulkString(args[1]));
+  } else if (commandName == "SET") {
+    if (args.length != 3) {
+      console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
+      connection.write("-ERR wrong number of arguments for 'set' command\r\n");
+      return;
+    }
+    cacheSet(args[1].toString('utf8'), args[2].toString('utf8'));
+    console.log(`[-->][${clientInfo}] SET key: ${args[1].toString('utf8')} to value: ${args[2].toString('utf8')}`);
+    console.log(`[-->][${clientInfo}] Response: +OK`);
+    connection.write("+OK\r\n");
+  } else if (commandName == "GET") {
+    if (args.length != 2) {
+      console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
+      connection.write("-ERR wrong number of arguments for 'get' command\r\n");
+      return;
+    }
+    let value = cacheGet(args[1].toString('utf8'));
+    if (value === undefined) {
+      console.log(`[-->][${clientInfo}] Response: NULL Bulk String, no value associated with key ${args[1].toString('utf8')}`);
+      connection.write("$-1\r\n");
+      return;
+    }
+    console.log(`[-->][${clientInfo}] Response: Bulk String, return value: ${value.toString('utf8')})`);
+    connection.write(encodeBulkString(value));
   } else {
     console.log(`[-->][${clientInfo}] Response: Error (unknown command)`);
     connection.write(
