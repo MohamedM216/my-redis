@@ -197,13 +197,13 @@ function executeCommand(rawCommand, connection, clientInfo) {
     console.log(`[-->][${clientInfo}] Response: Bulk string ("${echoVal.substring(0, 20)}${echoVal.length > 20 ? '...' : ''}")`);
     connection.write(encodeBulkString(args[1]));
   } else if (commandName == "SET") {
-    if (args.length != 3) {
+    if (!(args.length === 3 || args.length === 5)) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
       connection.write("-ERR wrong number of arguments for 'set' command\r\n");
       return;
     }
-    cacheSet(args[1].toString('utf8'), args[2].toString('utf8'));
-    console.log(`[-->][${clientInfo}] SET key: ${args[1].toString('utf8')} to value: ${args[2].toString('utf8')}`);
+    cacheSet(args[1].toString('utf8'), args[2].toString('utf8'), args.length === 5 ? Number(args[4].toString('utf8')) : Number.MAX_VALUE);
+    console.log(`[-->][${clientInfo}] SET key: ${args[1].toString('utf8')} to value: ${args[2].toString('utf8')} with PX: ${args.length === 5 ? Number(args[4].toString('utf8')) : null}`);
     console.log(`[-->][${clientInfo}] Response: +OK`);
     connection.write("+OK\r\n");
   } else if (commandName == "GET") {
