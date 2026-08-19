@@ -1,6 +1,6 @@
 let cache = new Map();
 
-// TODO: handle race condition
+// TODO: handle race conditions later e.g. INCR command
 // return to this later https://chat.qwen.ai/s/t_100dbeea-1c8d-42fc-97e3-dee9ab3c5a6a?fev=0.2.86
 export function cacheSet(key, val, PX = Number.MAX_VALUE) {
   cache.set(key, [val, Date.now(), Number(PX)]);
