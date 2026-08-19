@@ -56,6 +56,7 @@ hey
 |[EXEC] / [-->] | What command is running and what response is being sent back.|
 
 ## docs
+### commands
 - ECHO
 ```
 redis-cli -h 127.0.0.1 -p 6380 ping "optional message"
@@ -67,4 +68,8 @@ redis-cli -h 127.0.0.1 -p 6380 set key value
 - GET command
 ```
 redis-cli -h 127.0.0.1 -p 6380 get key
+```
+- RPUSH
+```
+redis-cli -h 127.0.0.1 -p 6380 RPUSH list_key val1 val2 val3...
 ```
