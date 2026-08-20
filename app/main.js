@@ -270,6 +270,18 @@ function executeCommand(rawCommand, connection, clientInfo) {
     }
     console.log(`[-->][${clientInfo}] Response: RESP Array`);
     connection.write(encodeArray(ret));
+  } else if (commandName === "LPUSH") {
+    if (args.length < 3) {
+      console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
+      connection.write("-ERR wrong number of arguments for 'lpush' command\r\n");
+      return;
+    }
+    let elements = args.slice(2).map(x => x.toString('utf8'));
+    elements = elements.length === 1 ? [elements] : elements;
+    let ret = push(args[1].toString('utf8'), elements, true);
+    console.log(`[-->][${clientInfo}] LPUSH: push elements ${elements}`);
+    console.log(`[-->][${clientInfo}] Response: RESP Integer, length of list: ${ret})`);
+    connection.write(`:${ret}\r\n`);
   } else {
     console.log(`[-->][${clientInfo}] Response: Error (unknown command)`);
     connection.write(

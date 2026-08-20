@@ -1,14 +1,20 @@
 let list = new Map();
 
 // push one element or list of elements
-export function push(keyList, elements) {
+export function push(keyList, elements, lpush = false) {
   let value = list.get(keyList);
+  if (lpush)
+    elements.reverse();
   if (value === undefined) {
     // create new list
     list.set(keyList, elements);
   } else {
-    // append
-    value.push(...elements);
+    if (lpush)
+      // prepend
+      value.unshift(...elements);
+    else
+      // append
+      value.push(...elements);
     list.set(keyList, value);
   }
   return list.get(keyList).length;

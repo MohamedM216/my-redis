@@ -80,3 +80,4 @@ redis-cli -h 127.0.0.1 -p 6380 LRANGE list_key 0 5
 ```
 redis-cli -h 127.0.0.1 -p 6380 LRANGE list_key -5 -2
 ```
+- LPUSH: the same as RPUSH but prepending intead of appending
