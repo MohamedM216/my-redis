@@ -13,3 +13,15 @@ export function push(keyList, elements) {
   }
   return list.get(keyList).length;
 }
+
+export function getRange(keyList, start, end) {
+  const data = list.get(keyList);
+  if (data === undefined) return undefined;
+
+  const len = data.length;
+  if (start < 0) start = Math.max(start + len, 0);
+  if (end < 0) end = end + len;
+  if (start >= len || start >= end) undefined;
+
+  return data.slice(start, end + 1);
+}

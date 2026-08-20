@@ -1,6 +1,6 @@
 import net from "net";
 import { cacheSet, cacheGet } from "./cache.js";
-import { push } from "./list.js"
+import { getRange, push } from "./list.js"
 
 const CRLF = Buffer.from("\r\n");
 const CR = 13;
@@ -160,6 +160,24 @@ function encodeBulkString(value) {
   ]);
 }
 
+// @param arr[]: array of strings
+// return array of bulk string
+function encodeArray(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) {
+    return Buffer.from("*0\r\n");
+  }
+
+  let respString = `*${arr.length}\r\n`;
+  for (const item of arr) {
+    const str = String(item);
+    // Use Buffer.byteLength to correctly count bytes for multi-byte UTF-8 characters
+    const byteLength = Buffer.byteLength(str, 'utf8');
+    respString += `$${byteLength}\r\n${str}\r\n`;
+  }
+
+  return Buffer.from(respString, 'utf8');
+}
+
 function executeCommand(rawCommand, connection, clientInfo) {
   if (rawCommand === null || rawCommand === undefined) {
     console.log(`[EXEC][${clientInfo}] Error: invalid command`);
@@ -233,6 +251,25 @@ function executeCommand(rawCommand, connection, clientInfo) {
     console.log(`[-->][${clientInfo}] RPUSH: push elements ${elements}`);
     console.log(`[-->][${clientInfo}] Response: RESP Integer, length of list: ${ret})`);
     connection.write(`:${ret}\r\n`);
+  } else if (commandName === "LRANGE") {
+    if (args.length !== 4) {
+      console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
+      connection.write("-ERR wrong number of arguments for 'lrange' command\r\n");
+      return;
+    }
+    const key = args[1].toString('utf8');
+    const start = Number(args[2].toString('utf8'));
+    const end = Number(args[3].toString('utf8'));
+
+    const ret = getRange(key, start, end);
+    console.log(`[-->][${clientInfo}] LRANGE: key ${key} in range ${start}, ${end}`);
+    if (ret === undefined) {
+      console.log(`[-->][${clientInfo}] Response: RESP Empty Array`);
+      connection.write("*0\r\n");
+      return;
+    }
+    console.log(`[-->][${clientInfo}] Response: RESP Array`);
+    connection.write(encodeArray(ret));
   } else {
     console.log(`[-->][${clientInfo}] Response: Error (unknown command)`);
     connection.write(

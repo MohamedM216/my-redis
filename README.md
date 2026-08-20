@@ -73,3 +73,10 @@ redis-cli -h 127.0.0.1 -p 6380 get key
 ```
 redis-cli -h 127.0.0.1 -p 6380 RPUSH list_key val1 val2 val3...
 ```
+- LRANGE
+```
+redis-cli -h 127.0.0.1 -p 6380 LRANGE list_key 0 5
+```
+```
+redis-cli -h 127.0.0.1 -p 6380 LRANGE list_key -5 -2
+```
