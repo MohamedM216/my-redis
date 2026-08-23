@@ -1,6 +1,26 @@
 import net from "net";
 import { cacheSet, cacheGet } from "./cache.js";
-import { getRange, pop, push } from "./list.js"
+import { getRange, pop, push, getListLength } from "./list.js"
+
+// Global state for blocking commands
+const blockedQueues = new Map(); // Maps list key -> Array of waiting clients
+let nextBlockId = 1;
+
+function unblockClient(clientState) {
+  if (clientState.timer) {
+    clearTimeout(clientState.timer);
+    clientState.timer = null;
+  }
+  const queue = blockedQueues.get(clientState.key);
+  if (queue) {
+    const idx = queue.findIndex(c => c.id === clientState.id);
+    if (idx !== -1) queue.splice(idx, 1);
+    if (queue.length === 0) blockedQueues.delete(clientState.key);
+  }
+  if (clientState.connection) {
+    clientState.connection.blockState = null;
+  }
+}
 
 const CRLF = Buffer.from("\r\n");
 const CR = 13;
@@ -178,6 +198,15 @@ function encodeArray(arr) {
   return Buffer.from(respString, 'utf8');
 }
 
+function sendBlpopResponse(connection, key, element) {
+  const keyStr = String(key);
+  const elStr = String(element);
+  const keyLen = Buffer.byteLength(keyStr, 'utf8');
+  const elLen = Buffer.byteLength(elStr, 'utf8');
+  const resp = `*2\r\n$${keyLen}\r\n${keyStr}\r\n$${elLen}\r\n${elStr}\r\n`;
+  connection.write(resp);
+}
+
 function executeCommand(rawCommand, connection, clientInfo) {
   if (rawCommand === null || rawCommand === undefined) {
     console.log(`[EXEC][${clientInfo}] Error: invalid command`);
@@ -247,10 +276,30 @@ function executeCommand(rawCommand, connection, clientInfo) {
     }
     let elements = args.slice(2).map(x => x.toString('utf8'));
     elements = elements.length === 1 ? [elements] : elements;
-    let ret = push(args[1].toString('utf8'), elements);
-    console.log(`[-->][${clientInfo}] RPUSH: push elements ${elements}`);
-    console.log(`[-->][${clientInfo}] Response: RESP Integer, length of list: ${ret})`);
-    connection.write(`:${ret}\r\n`);
+    let elementsToAdd = [...elements];
+
+    const key = args[1].toString('utf8');
+    let queue = blockedQueues.get(key);
+
+    if (queue && queue.length > 0) {
+      while (queue.length > 0 && elementsToAdd.length > 0) {
+        const clientState = queue.shift(); 
+        const element = elementsToAdd.shift();
+        
+        unblockClient(clientState); // removes them from ALL queues and clears timer
+        sendBlpopResponse(clientState.connection, key, element);
+        console.log(`[-->][${clientState.clientInfo}] BLPOP unblocked with element: ${element}`);
+      }
+    }
+    if (elementsToAdd.length > 0) {
+      let ret = push(args[1].toString('utf8'), elementsToAdd);
+      console.log(`[-->][${clientInfo}] RPUSH: push elements [${elementsToAdd.join(', ')}]`);
+      console.log(`[-->][${clientInfo}] Response: RESP Integer, length of list: ${ret})`);
+      connection.write(`:${ret}\r\n`);
+    } else {
+      console.log(`[-->][${clientInfo}] RPUSH: all elements consumed by blocked clients`);
+      connection.write(`:0\r\n`);
+    }
   } else if (commandName === "LRANGE") {
     if (args.length !== 4) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
@@ -300,6 +349,54 @@ function executeCommand(rawCommand, connection, clientInfo) {
     console.log(`[-->][${clientInfo}] LPOP: pop first ${count} elements`);
     console.log(`[-->][${clientInfo}] Response: RESP Array`);
     connection.write(encodeArray(ret));
+  } else if (commandName === "BLPOP") {
+    if (args.length < 3) {
+      connection.write("-ERR wrong number of arguments for 'blpop' command\r\n");
+      return;
+    }
+    
+    const timeoutStr = args[args.length - 1].toString('utf8');
+    const timeout = Number(timeoutStr);
+    if (isNaN(timeout) || timeout < 0) {
+      connection.write("-ERR timeout is not a float or out of range\r\n");
+      return;
+    }
+    const key = args[1].toString('utf8');
+    const len = getListLength(key);
+    if (len > 0) {
+      const popped = pop(key);
+      if (popped && popped.length > 0) {
+        sendBlpopResponse(connection, key, popped[0]);
+        return;
+      }
+    }
+    
+    // if no elements found, block the client
+    const blockId = nextBlockId++;
+    const clientState = {
+      id: blockId,
+      connection,
+      clientInfo,
+      key,
+      timer: null
+    };
+    
+    // Set timeout if > 0. If 0, it blocks indefinitely (no timer set)
+    if (timeout > 0) {
+      clientState.timer = setTimeout(() => {
+        unblockClient(clientState);
+        connection.write("*-1\r\n"); // Null array on timeout
+        console.log(`[-->][${clientInfo}] BLPOP timeout reached`);
+      }, timeout * 1000);
+    }
+    
+    // Add client to the queue for the requested key
+    if (!blockedQueues.has(key)) blockedQueues.set(key, []);
+    blockedQueues.get(key).push(clientState);
+    
+    // Attach state to connection so we can clean up if they disconnect
+    connection.blockState = clientState;
+    console.log(`[-->][${clientInfo}] BLPOP blocking on keys: ${key} with timeout ${timeout}`);
   } else {
     console.log(`[-->][${clientInfo}] Response: Error (unknown command)`);
     connection.write(
@@ -368,10 +465,12 @@ const server = net.createServer((connection) => {
 
   connection.on("end", () => {
     console.log(`[-][${clientInfo}] Client disconnected`);
+    if (connection.blockState) unblockClient(connection.blockState);
   });
 
   connection.on("error", (error) => {
     console.error("Connection error:", error.message);
+    if (connection.blockState) unblockClient(connection.blockState);
   });
 });
 

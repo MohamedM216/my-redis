@@ -39,5 +39,13 @@ export function pop(key, count = 1) {
   count = Math.min(count, data.length);
   for (let i = 0; i < count; ++i)
     ret.push(data.shift());
+
+  if (data.length === 0)
+    list.delete(key);
   return ret;
+}
+
+export function getListLength(keyList) {
+  const data = list.get(keyList);
+  return data ? data.length : 0;
 }
