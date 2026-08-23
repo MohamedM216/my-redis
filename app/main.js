@@ -1,6 +1,6 @@
 import net from "net";
 import { cacheSet, cacheGet } from "./cache.js";
-import { getRange, push } from "./list.js"
+import { getRange, pop, push } from "./list.js"
 
 const CRLF = Buffer.from("\r\n");
 const CR = 13;
@@ -282,6 +282,24 @@ function executeCommand(rawCommand, connection, clientInfo) {
     console.log(`[-->][${clientInfo}] LPUSH: push elements ${elements}`);
     console.log(`[-->][${clientInfo}] Response: RESP Integer, length of list: ${ret})`);
     connection.write(`:${ret}\r\n`);
+  } else if (commandName === "LPOP") {
+    if (args.length < 2) {
+      console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
+      connection.write("-ERR wrong number of arguments for 'lpop' command\r\n");
+      return;
+    }
+    let count = 1;
+    if (args.length === 3)
+      count = Number(args[2].toString('utf8'));
+    const ret = pop(args[1].toString('utf8'), count);
+    if (ret === undefined) {
+      console.log(`[-->][${clientInfo}] Response: NULL Bulk String, no value associated with key ${args[1].toString('utf8')}`);
+      connection.write("$-1\r\n");
+      return;
+    }
+    console.log(`[-->][${clientInfo}] LPOP: pop first ${count} elements`);
+    console.log(`[-->][${clientInfo}] Response: RESP Array`);
+    connection.write(encodeArray(ret));
   } else {
     console.log(`[-->][${clientInfo}] Response: Error (unknown command)`);
     connection.write(

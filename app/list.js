@@ -1,13 +1,13 @@
 let list = new Map();
 
 // push one element or list of elements
-export function push(keyList, elements, lpush = false) {
-  let value = list.get(keyList);
+export function push(key, elements, lpush = false) {
+  let value = list.get(key);
   if (lpush)
     elements.reverse();
   if (value === undefined) {
     // create new list
-    list.set(keyList, elements);
+    list.set(key, elements);
   } else {
     if (lpush)
       // prepend
@@ -15,14 +15,14 @@ export function push(keyList, elements, lpush = false) {
     else
       // append
       value.push(...elements);
-    list.set(keyList, value);
+    list.set(key, value);
   }
-  return list.get(keyList).length;
+  return list.get(key).length;
 }
 
-export function getRange(keyList, start, end) {
-  const data = list.get(keyList);
-  if (data === undefined) return undefined;
+export function getRange(key, start, end) {
+  const data = list.get(key);
+  if (data === undefined || data.length === 0) return undefined;
 
   const len = data.length;
   if (start < 0) start = Math.max(start + len, 0);
@@ -30,4 +30,14 @@ export function getRange(keyList, start, end) {
   if (start >= len || start >= end) undefined;
 
   return data.slice(start, end + 1);
+}
+
+export function pop(key, count = 1) {
+  const data = list.get(key);
+  if (data === undefined || data.length === 0) return undefined;
+  let ret = [];
+  count = Math.min(count, data.length);
+  for (let i = 0; i < count; ++i)
+    ret.push(data.shift());
+  return ret;
 }
