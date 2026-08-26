@@ -397,6 +397,20 @@ function executeCommand(rawCommand, connection, clientInfo) {
     // Attach state to connection so we can clean up if they disconnect
     connection.blockState = clientState;
     console.log(`[-->][${clientInfo}] BLPOP blocking on keys: ${key} with timeout ${timeout}`);
+  } else if (commandName === "TYPE") {
+    if (args.length !== 2) {
+      console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
+      connection.write("-ERR wrong number of arguments for 'type' command\r\n");
+      return;
+    }
+    console.log(`[-->][${clientInfo}] TYPE of value of key ${args[1].toString('utf8')}`);
+    if (cacheGet(args[1].toString('utf8')) === undefined) {
+      console.log(`[-->][${clientInfo}] Response: Simple String 'none'`);
+      connection.write("+none\r\n");
+    } else {
+      console.log(`[-->][${clientInfo}] Response: Simple String with 'type'`);
+      connection.write("+string\r\n");
+    }
   } else {
     console.log(`[-->][${clientInfo}] Response: Error (unknown command)`);
     connection.write(
