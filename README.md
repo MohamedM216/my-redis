@@ -96,4 +96,11 @@ hey
     redis-cli -h 127.0.0.1 -p 6380 blpop list_key2 10 # client 2
     redis-cli -h 127.0.0.1 -p 6380 rpush list_key2 1000 200 # client 3
     ```
-
+- TYPE (cache has the highest priority)
+```
+redis-cli -h 127.0.0.1 -p 6380 TYPE key # string or none if invalid key
+```
+- XADD
+```
+redis-cli -h 127.0.0.1 -p 6380 XADD stream_key 1526919030474-0 temperature 36 humidity 95
+```

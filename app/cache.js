@@ -14,3 +14,7 @@ export function cacheGet(key) {
     return undefined;
   return val[0];
 }
+
+export function hasKey(key) {
+  return cacheGet(key) === undefined ? false : true;
+}
