@@ -1,6 +1,7 @@
+import { getEntry, hasKey, setEntry } from './store.js'
+
 // stream_key : {id: "", key1: "", ...}
 // args = (key-value pairs)
-let stream = new Map();
 
 export function setStream(streamArr) {
   const key = streamArr[0];
@@ -10,19 +11,20 @@ export function setStream(streamArr) {
     objectToAdd[streamArr[i]] = streamArr[i + 1];
   }
 
-  if (stream.has(key)) {
-    const currentObject = stream.get();
-    stream.set(key, { ...currentObject, ...objectToAdd });
+  let entry = getEntry(key);
+  if (!entry || entry === undefined) {
+    setEntry(key, 'stream', objectToAdd);
   } else {
-    stream.set(key, objectToAdd);
+    const currentObject = entry.value;
+    setEntry(key, 'stream', { ...currentObject, ...objectToAdd });
   }
   return objectToAdd.id;
 }
 
 export function getStream(key) {
-  return stream.get(key);
+  return getEntry(key).value;
 }
 
 export function hasStream(key) {
-  return stream.has(key);
+  return hasKey(key) && getEntry(key).type === 'stream';
 }

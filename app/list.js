@@ -1,29 +1,35 @@
-let list = new Map();
+import { setEntry, getEntry, deleteKey } from './store.js'
 
 // push one element or list of elements
 export function push(key, elements, lpush = false) {
-  let value = list.get(key);
+  let entry = getEntry(key);
   if (lpush)
     elements.reverse();
-  if (value === undefined) {
+
+  let len = 0;
+  if (!entry || entry === undefined) {
     // create new list
-    list.set(key, elements);
+    len = elements.length;
+    setEntry(key, 'list', elements);
   } else {
+    let data = entry ? entry.value : [];
     if (lpush)
       // prepend
-      value.unshift(...elements);
+      data.unshift(...elements);
     else
       // append
-      value.push(...elements);
-    list.set(key, value);
+      data.push(...elements);
+    setEntry(key, 'list', data);
+    len = data.length;
   }
-  return list.get(key).length;
+  return len;
 }
 
 export function getRange(key, start, end) {
-  const data = list.get(key);
-  if (data === undefined || data.length === 0) return undefined;
+  const entry = getEntry(key);
+  if (!entry || entry.type !== 'list') return undefined;
 
+  const data = entry.value;
   const len = data.length;
   if (start < 0) start = Math.max(start + len, 0);
   if (end < 0) end = end + len;
@@ -33,19 +39,21 @@ export function getRange(key, start, end) {
 }
 
 export function pop(key, count = 1) {
-  const data = list.get(key);
-  if (data === undefined || data.length === 0) return undefined;
+  const entry = getEntry(key);
+  if (!entry || entry.type !== 'list' || entry.value.length === 0) return undefined;
   let ret = [];
+  const data = entry.value;
   count = Math.min(count, data.length);
   for (let i = 0; i < count; ++i)
     ret.push(data.shift());
 
   if (data.length === 0)
-    list.delete(key);
+    deleteKey(key);
   return ret;
 }
 
-export function getListLength(keyList) {
-  const data = list.get(keyList);
-  return data ? data.length : 0;
+export function getListLength(key) {
+  const entry = getEntry(key);
+  if (!entry || entry.type !== 'list') return 0;
+  return entry.value.length;
 }

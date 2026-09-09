@@ -1,7 +1,8 @@
 import net from "net";
-import { cacheSet, cacheGet, hasKey } from "./cache.js";
+import { cacheSet, cacheGet } from "./cache.js";
 import { getRange, pop, push, getListLength } from "./list.js"
-import { setStream, hasStream } from "./stream.js"
+import { setStream } from "./stream.js"
+import { getType } from "./store.js";
 
 // Global state for blocking commands
 const blockedQueues = new Map(); // Maps list key -> Array of waiting clients
@@ -404,19 +405,11 @@ function executeCommand(rawCommand, connection, clientInfo) {
       connection.write("-ERR wrong number of arguments for 'type' command\r\n");
       return;
     }
-    console.log(`[-->][${clientInfo}] TYPE of value of key ${args[1].toString('utf8')}`);
-    if (hasKey(args[1].toString('utf8')) === false) { // 1st priority
-      if (hasStream(args[1].toString('utf8')) === false) {
-        console.log(`[-->][${clientInfo}] Response: Simple String 'none'`);
-        connection.write("+none\r\n");
-      } else {
-        console.log(`[-->][${clientInfo}] Response: Simple String with type 'stream'`);
-        connection.write("+stream\r\n");
-      }
-    } else {
-      console.log(`[-->][${clientInfo}] Response: Simple String with type 'string'`);
-      connection.write("+string\r\n");
-    }
+    const key = args[1].toString('utf8');
+    console.log(`[-->][${clientInfo}] TYPE of value of key ${key}`);
+    const type = getType(key);
+    console.log(`[-->][${clientInfo}] Response: Simple String '${type}'`);
+    connection.write(`+${type}\r\n`);
   } else if (commandName === "XADD") {
     if (args.length < 5) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);

@@ -1,20 +1,18 @@
-let cache = new Map();
+import { setEntry, getEntry, deleteKey } from './store.js';
 
 // TODO: handle race conditions later e.g. INCR command
-// return to this later https://chat.qwen.ai/s/t_100dbeea-1c8d-42fc-97e3-dee9ab3c5a6a?fev=0.2.86
 export function cacheSet(key, val, PX = Number.MAX_VALUE) {
-  cache.set(key, [val, Date.now(), Number(PX)]);
+  setEntry(key, 'string', { value: val, createdAt: Date.now(), px: Number(PX) });
 }
 
 export function cacheGet(key) {
-  let val = cache.get(key);
-  if (val === undefined)
-    return val;
-  if ((Date.now() - (val[1] + val[2])) > 0)
+  let entry = getEntry(key);
+  if (!entry || entry.type !== 'string')
     return undefined;
-  return val[0];
-}
-
-export function hasKey(key) {
-  return cacheGet(key) === undefined ? false : true;
+  const { value, createdAt, px } = entry.value
+  if (px !== Number.MAX_VALUE && (Date.now() - (createdAt + px)) > 0) {
+    deleteKey(key);
+    return undefined;
+  }
+  return value;
 }
