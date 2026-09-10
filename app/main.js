@@ -418,6 +418,11 @@ function executeCommand(rawCommand, connection, clientInfo) {
     }
     const stream = args.slice(1).map(x => x.toString('utf8'));
     const id = setStream(stream);
+    if (id === -1) {
+      console.log(`[-->][${clientInfo}] Response: Error invalid ID '${id}'`);
+      connection.write("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n");
+      return;
+    }
     console.log(`[-->][${clientInfo}] Response: Bulk String '${id}'`);
     connection.write(encodeBulkString(id));
   } else {

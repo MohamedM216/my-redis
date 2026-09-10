@@ -23,3 +23,7 @@ export function getType(key) {
   if (!entry) return 'none';
   return entry.type;
 }
+
+export function getStoreClone() {
+  return store;
+}
