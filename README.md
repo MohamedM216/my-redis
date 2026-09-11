@@ -97,10 +97,12 @@ hey
     redis-cli -h 127.0.0.1 -p 6380 rpush list_key2 1000 200 # client 3
     ```
 - TYPE (cache has the highest priority)
-```
-redis-cli -h 127.0.0.1 -p 6380 TYPE key # string or none if invalid key
-```
+    ```
+    redis-cli -h 127.0.0.1 -p 6380 TYPE key # string or none if invalid key
+    ```
 - XADD
-```
-redis-cli -h 127.0.0.1 -p 6380 XADD stream_key 1526919030474-0 temperature 36 humidity 95
-```
+    ```
+    redis-cli -h 127.0.0.1 -p 6380 XADD stream_key 1526919030474-0 temperature 36 humidity 95
+    redis-cli -h 127.0.0.1 -p 6380 XADD stream_key 1526919030474-* temperature 36 humidity 95
+    redis-cli -h 127.0.0.1 -p 6380 XADD stream_key * temperature 36 humidity 95 # use \* if you have the Shell Globbing issue
+    ```

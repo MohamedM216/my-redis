@@ -15,7 +15,7 @@ export function setStream(streamArr) {
   if (valid_ret === 1) {
     objectToAdd.id = doPartialAutoIdGeneration(streamArr[1]);
   } else if (valid_ret === 2) {
-
+    objectToAdd.id = doFullAutoIdGeneration();
   } else {
     objectToAdd.id = streamArr[1];
   }
@@ -44,7 +44,7 @@ export function hasStream(key) {
 
 function getLastStreamEntry() {
   const store = getStoreClone();
-  const entries = store.values;
+  const entries = Array.from(store.values());
   let last_entry;
   for (let i = entries.length - 1; i >= 0; --i) {
     if (entries[i].type === 'stream') {
@@ -57,9 +57,10 @@ function getLastStreamEntry() {
 
 // -1: invalid, 0: default, 1: partial auto-generation, 2: full
 function validateStreamEntryId(id) {
+  if (id === "*")
+    return 2;
   if (id === "0-0")
     return -1;
-
   if (id.indexOf('-') === -1)
     return -1;
   
@@ -87,14 +88,26 @@ function validateStreamEntryId(id) {
 }
 
 // return string (full id)
-function doPartialAutoIdGeneration(id) {
+function doPartialAutoIdGeneration(id) { // O(1) time
   const id_time = id.split('-')[0];
   const last_entry = getLastStreamEntry();
   if (last_entry === undefined) { // empty stream
-    return id_time === "0" ? id_time + "-1" : id_time + "-0";
+    return Number(id_time) === 0 ? id_time + "-1" : id_time + "-0";
   }
   if (Number(id_time) === Number(last_entry.value.id.split('-')[0])) {
     return id_time + "-" + String(Number(last_entry.value.id.split('-')[1]) + 1);
   }
-  return id_time === "0" ? id_time + "-1" : id_time + "-0";
+  return Number(id_time) === 0 ? id_time + "-1" : id_time + "-0";
+}
+
+function doFullAutoIdGeneration() { // O(1) time
+  const last_entry = getLastStreamEntry();
+  if (last_entry === undefined) { // empty stream
+    return String(Date.now()) + "-0";
+  }
+  const time_now = Date.now();
+  if (time_now === Number(last_entry.value.id.split('-')[0])) {
+    return String(time_now) + "-" + String(Number(last_entry.value.id.split('-')[1]) + 1);
+  }
+  return String(time_now) + "-0";
 }
