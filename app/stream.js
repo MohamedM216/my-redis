@@ -10,9 +10,9 @@ export function setStream(streamArr) {
   if (valid_ret === -1) // invalid
     return -1;
   if (valid_ret === 1) {
-    entry.id = doPartialAutoIdGeneration(streamArr[1]);
+    entry.id = doPartialAutoIdGeneration(key, streamArr[1]);
   } else if (valid_ret === 2) {
-    entry.id = doFullAutoIdGeneration();
+    entry.id = doFullAutoIdGeneration(key);
   } else {
     entry.id = streamArr[1];
   }
@@ -72,7 +72,7 @@ function validateStreamEntryId(key, id) {
 }
 
 // return string (full id)
-function doPartialAutoIdGeneration(id) { // O(1) time
+function doPartialAutoIdGeneration(key, id) { // O(1) time
   const id_time = id.split('-')[0];
   const streamBlock = getEntry(key);
   if (!streamBlock || streamBlock === undefined) {  // empty stream
@@ -86,7 +86,7 @@ function doPartialAutoIdGeneration(id) { // O(1) time
   return Number(id_time) === 0 ? id_time + "-1" : id_time + "-0";
 }
 
-function doFullAutoIdGeneration() { // O(1) time
+function doFullAutoIdGeneration(key) { // O(1) time
   const streamBlock = getEntry(key);
   if (!streamBlock || streamBlock === undefined) {  // empty stream
     return String(Date.now()) + "-0";
