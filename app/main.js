@@ -1,7 +1,7 @@
 import net from "net";
 import { cacheSet, cacheGet } from "./cache.js";
 import { getRange, pop, push, getListLength } from "./list.js"
-import { setStream } from "./stream.js"
+import { setStream, getStreamRange } from "./stream.js"
 import { getType } from "./store.js";
 
 // Global state for blocking commands
@@ -198,6 +198,34 @@ function encodeArray(arr) {
   }
 
   return Buffer.from(respString, 'utf8');
+}
+
+function encodeStreamEntries(entries) {
+  if (!entries || entries.length === 0) {
+    return Buffer.from("*0\r\n");
+  }
+
+  let resp = `*${entries.length}\r\n`;
+
+  for (const entry of entries) {
+    const id = String(entry[0]);
+    const fields = entry[1]; // Array of strings
+    
+    // Each entry is an inner array of exactly 2 elements: [ID, [fields...]]
+    resp += `*2\r\n`;
+    
+    // 1. Encode ID as a Bulk String
+    resp += `$${Buffer.byteLength(id, 'utf8')}\r\n${id}\r\n`;
+    
+    // 2. Encode fields as an Array of Bulk Strings
+    resp += `*${fields.length}\r\n`;
+    for (const field of fields) {
+      const fStr = String(field);
+      resp += `$${Buffer.byteLength(fStr, 'utf8')}\r\n${fStr}\r\n`;
+    }
+  }
+  
+  return Buffer.from(resp, 'utf8');
 }
 
 function sendBlpopResponse(connection, key, element) {
@@ -425,6 +453,20 @@ function executeCommand(rawCommand, connection, clientInfo) {
     }
     console.log(`[-->][${clientInfo}] Response: Bulk String '${id}'`);
     connection.write(encodeBulkString(id));
+  } else if (commandName === "XRANGE") {
+    if (args.length !== 4) {
+      console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
+      connection.write("-ERR wrong number of arguments for 'xrange' command\r\n");
+      return;
+    }
+    const range = getStreamRange(args[1].toString('utf8'), args[2].toString('utf8'), args[3].toString('utf8'));
+    if (range === undefined) {
+      console.log(`[-->][${clientInfo}] Response: NULL Bulk String, no value associated with key ${args[1].toString('utf8')}`);
+      connection.write("$-1\r\n");
+      return;
+    }
+    console.log(`[-->][${clientInfo}] Response: RESP array of arrays.`);
+    connection.write(encodeStreamEntries(range));
   } else {
     console.log(`[-->][${clientInfo}] Response: Error (unknown command)`);
     connection.write(
