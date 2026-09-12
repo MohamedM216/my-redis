@@ -109,4 +109,7 @@ hey
 - XRANGE
     ```
     redis-cli -h 127.0.0.1 -p 6380 XRANGE stream_key 1526919-0 1526919-5
+    redis-cli -h 127.0.0.1 -p 6380 XRANGE stream_key - +    # - : start from the 1st entry, + : end with the last entry
+    redis-cli -h 127.0.0.1 -p 6380 XRANGE stream_key - 1526919-5
+    redis-cli -h 127.0.0.1 -p 6380 XRANGE stream_key 1526919-2 +
     ```

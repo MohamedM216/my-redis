@@ -108,6 +108,8 @@ export function getStreamRange(key, startId, endId) {
     return undefined;
   }
   const entries = streamBlock.value;
+  startId = startId === "-" ? entries[0][0] : startId;
+  endId = endId === "+" ? entries[entries.length - 1][0] : endId;
   let inRange = false;
   let result = [];  // [["id", ["key a", "val a", "key b", "val b",...]], ["id", []], ["id", []],...]
   for (const entry of entries) {
