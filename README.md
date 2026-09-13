@@ -113,3 +113,7 @@ hey
     redis-cli -h 127.0.0.1 -p 6380 XRANGE stream_key - 1526919-5
     redis-cli -h 127.0.0.1 -p 6380 XRANGE stream_key 1526919-2 +
     ```
+- XREAD
+    ```
+    redis-cli -h 127.0.0.1 -p 6380 XREAD STREAMS <key1> <key2> ... <id1> <id2> ...
+    ```

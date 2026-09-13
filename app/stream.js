@@ -127,3 +127,23 @@ export function getStreamRange(key, startId, endId) {
   }
   return result;
 }
+
+export function getStreamXRead(key, id) {
+  const streamBlock = getEntry(key);
+  if (!streamBlock || streamBlock === undefined || streamBlock.type !== "stream") {
+    return [];
+  }
+  const entries = streamBlock.value;
+  let inRange = false;
+  let result = [];  // [["id", ["key a", "val a", "key b", "val b",...]], ["id", []], ["id", []],...]
+  for (const entry of entries) {
+    if (entry[0] === id) {
+      inRange = true;
+      continue;
+    }
+    if (inRange) {
+      result.push(entry);
+    }
+  }
+  return result;
+}

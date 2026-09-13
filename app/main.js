@@ -1,7 +1,7 @@
 import net from "net";
 import { cacheSet, cacheGet } from "./cache.js";
 import { getRange, pop, push, getListLength } from "./list.js"
-import { setStream, getStreamRange } from "./stream.js"
+import { setStream, getStreamRange, getStreamXRead } from "./stream.js"
 import { getType } from "./store.js";
 
 // Global state for blocking commands
@@ -222,6 +222,39 @@ function encodeStreamEntries(entries) {
     for (const field of fields) {
       const fStr = String(field);
       resp += `$${Buffer.byteLength(fStr, 'utf8')}\r\n${fStr}\r\n`;
+    }
+  }
+  
+  return Buffer.from(resp, 'utf8');
+}
+
+function encodeXReadResponse(streamResults) {
+  // streamResults is an array of [key, entries] pairs
+  let resp = `*${streamResults.length}\r\n`;
+  
+  for (const [key, entries] of streamResults) {
+    // Each stream result is a 2-element array: [stream_key, entries_array]
+    resp += `*2\r\n`;
+    
+    // 1. Encode the stream key as a Bulk String
+    const keyStr = String(key);
+    resp += `$${Buffer.byteLength(keyStr, 'utf8')}\r\n${keyStr}\r\n`;
+    
+    // 2. Encode the entries array
+    resp += `*${entries.length}\r\n`;
+    for (const entry of entries) {
+      const id = String(entry[0]);
+      const fields = entry[1]; 
+      
+      // Each entry is a 2-element array: [id, fields_array]
+      resp += `*2\r\n`;
+      resp += `$${Buffer.byteLength(id, 'utf8')}\r\n${id}\r\n`;
+      
+      resp += `*${fields.length}\r\n`;
+      for (const field of fields) {
+        const fStr = String(field);
+        resp += `$${Buffer.byteLength(fStr, 'utf8')}\r\n${fStr}\r\n`;
+      }
     }
   }
   
@@ -467,6 +500,46 @@ function executeCommand(rawCommand, connection, clientInfo) {
     }
     console.log(`[-->][${clientInfo}] Response: RESP array of arrays.`);
     connection.write(encodeStreamEntries(range));
+  } else if (commandName === "XREAD") {
+    // find the STREAMS keyword dynamically
+    let streamsIndex = -1;
+    for (let i = 1; i < args.length; i++) {
+      if (args[i].toString('utf8').toUpperCase() === 'STREAMS') {
+        streamsIndex = i;
+        break;
+      }
+    }
+    if (streamsIndex === -1) {
+      connection.write("-ERR syntax error\r\n");
+      return;
+    }
+
+    const streamArgs = args.slice(streamsIndex + 1).map(x => x.toString('utf8'));
+    if (streamArgs.length === 0 || streamArgs.length % 2 !== 0) {
+      connection.write("-ERR Unbalanced 'xread' list of streams: for each stream key an ID must be specified\r\n");
+      return;
+    }
+
+    const half = streamArgs.length / 2;
+    const keys = streamArgs.slice(0, half);
+    const ids = streamArgs.slice(half);
+
+    let finalResult = [];
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const id = ids[i];
+      const entries = getStreamXRead(key, id);
+      if (entries && entries.length > 0) {
+        finalResult.push([key, entries]);
+      }
+    }
+
+    if (finalResult.length === 0) {
+      connection.write("*-1\r\n");
+      return;
+    }
+    console.log(`[-->][${clientInfo}] Response: XREAD Array of Streams`);
+    connection.write(encodeXReadResponse(finalResult));
   } else {
     console.log(`[-->][${clientInfo}] Response: Error (unknown command)`);
     connection.write(
