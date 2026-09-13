@@ -3,6 +3,8 @@ import { cacheSet, cacheGet } from "./cache.js";
 import { getRange, pop, push, getListLength } from "./list.js"
 import { setStream, getStreamRange, getStreamXRead } from "./stream.js"
 import { getType } from "./store.js";
+import { parseResp, ASTERISK, CRLF } from "./parser.js"
+import { toBuffer, encodeBulkString, encodeArray, encodeBlpopResponse, encodeStreamEntries, encodeXReadResponse } from "./encoder.js"
 
 // Global state for blocking commands
 const blockedQueues = new Map(); // Maps list key -> Array of waiting clients
@@ -22,252 +24,6 @@ function unblockClient(clientState) {
   if (clientState.connection) {
     clientState.connection.blockState = null;
   }
-}
-
-const CRLF = Buffer.from("\r\n");
-const CR = 13;
-const LF = 10;
-const ASTERISK = 42; // "*"
-
-function parseNumber(buffer, start, end) {
-  const text = buffer.toString("ascii", start, end);
-
-  if (!/^-?\d+$/.test(text)) {
-    return null;
-  }
-
-  return Number(text);
-}
-
-function parseResp(buffer, offset = 0) {
-  if (offset >= buffer.length) {
-    return null;
-  }
-
-  const type = String.fromCharCode(buffer[offset]);
-  const crlfIndex = buffer.indexOf(CRLF, offset + 1);
-
-  // Simple string: +OK\r\n
-  // Simple error: -ERR ...\r\n
-  // Integer: :123\r\n
-  if (type === "+" || type === "-" || type === ":") {
-    if (crlfIndex === -1) {
-      return null;
-    }
-
-    const text = buffer.toString("utf8", offset + 1, crlfIndex);
-    const value = type === ":" ? Number(text) : text;
-
-    return {
-      value,
-      nextOffset: crlfIndex + 2,
-    };
-  }
-
-  // Bulk string: $3\r\nhey\r\n
-  if (type === "$") {
-    if (crlfIndex === -1) {
-      return null;
-    }
-
-    const length = parseNumber(buffer, offset + 1, crlfIndex);
-
-    if (length === null || length < -1) {
-      return {
-        error: "invalid bulk string length",
-      };
-    }
-
-    // Null bulk string: $-1\r\n
-    if (length === -1) {
-      return {
-        value: null,
-        nextOffset: crlfIndex + 2,
-      };
-    }
-
-    const dataStart = crlfIndex + 2;
-    const dataEnd = dataStart + length;
-
-    // Need data + final CRLF.
-    if (buffer.length < dataEnd + 2) {
-      return null;
-    }
-
-    if (buffer[dataEnd] !== CR || buffer[dataEnd + 1] !== LF) {
-      return {
-        error: "missing CRLF after bulk string",
-      };
-    }
-
-    // Copy the data so it is not tied to the old buffer.
-    const data = Buffer.from(buffer.subarray(dataStart, dataEnd));
-
-    return {
-      value: data,
-      nextOffset: dataEnd + 2,
-    };
-  }
-
-  // Array: *2\r\n...
-  if (type === "*") {
-    if (crlfIndex === -1) {
-      return null;
-    }
-
-    const count = parseNumber(buffer, offset + 1, crlfIndex);
-
-    if (count === null || count < -1) {
-      return {
-        error: "invalid array length",
-      };
-    }
-
-    // Null array: *-1\r\n
-    if (count === -1) {
-      return {
-        value: null,
-        nextOffset: crlfIndex + 2,
-      };
-    }
-
-    let nextOffset = crlfIndex + 2;
-    const items = [];
-
-    for (let i = 0; i < count; i += 1) {
-      const parsed = parseResp(buffer, nextOffset);
-
-      if (parsed === null) {
-        return null;
-      }
-
-      if (parsed.error) {
-        return parsed;
-      }
-
-      items.push(parsed.value);
-      nextOffset = parsed.nextOffset;
-    }
-
-    return {
-      value: items,
-      nextOffset,
-    };
-  }
-
-  return {
-    error: `unsupported RESP type: ${type}`,
-  };
-}
-
-function toBuffer(value) {
-  if (Buffer.isBuffer(value)) {
-    return value;
-  }
-
-  if (value === null || value === undefined) {
-    return Buffer.alloc(0);
-  }
-
-  return Buffer.from(String(value));
-}
-
-function encodeBulkString(value) {
-  const data = toBuffer(value);
-
-  return Buffer.concat([
-    Buffer.from(`$${data.length}\r\n`),
-    data,
-    CRLF,
-  ]);
-}
-
-// @param arr[]: array of strings
-// return array of bulk string
-function encodeArray(arr) {
-  if (!Array.isArray(arr) || arr.length === 0) {
-    return Buffer.from("*0\r\n");
-  }
-
-  let respString = `*${arr.length}\r\n`;
-  for (const item of arr) {
-    const str = String(item);
-    // Use Buffer.byteLength to correctly count bytes for multi-byte UTF-8 characters
-    const byteLength = Buffer.byteLength(str, 'utf8');
-    respString += `$${byteLength}\r\n${str}\r\n`;
-  }
-
-  return Buffer.from(respString, 'utf8');
-}
-
-function encodeStreamEntries(entries) {
-  if (!entries || entries.length === 0) {
-    return Buffer.from("*0\r\n");
-  }
-
-  let resp = `*${entries.length}\r\n`;
-
-  for (const entry of entries) {
-    const id = String(entry[0]);
-    const fields = entry[1]; // Array of strings
-    
-    // Each entry is an inner array of exactly 2 elements: [ID, [fields...]]
-    resp += `*2\r\n`;
-    
-    // 1. Encode ID as a Bulk String
-    resp += `$${Buffer.byteLength(id, 'utf8')}\r\n${id}\r\n`;
-    
-    // 2. Encode fields as an Array of Bulk Strings
-    resp += `*${fields.length}\r\n`;
-    for (const field of fields) {
-      const fStr = String(field);
-      resp += `$${Buffer.byteLength(fStr, 'utf8')}\r\n${fStr}\r\n`;
-    }
-  }
-  
-  return Buffer.from(resp, 'utf8');
-}
-
-function encodeXReadResponse(streamResults) {
-  // streamResults is an array of [key, entries] pairs
-  let resp = `*${streamResults.length}\r\n`;
-  
-  for (const [key, entries] of streamResults) {
-    // Each stream result is a 2-element array: [stream_key, entries_array]
-    resp += `*2\r\n`;
-    
-    // 1. Encode the stream key as a Bulk String
-    const keyStr = String(key);
-    resp += `$${Buffer.byteLength(keyStr, 'utf8')}\r\n${keyStr}\r\n`;
-    
-    // 2. Encode the entries array
-    resp += `*${entries.length}\r\n`;
-    for (const entry of entries) {
-      const id = String(entry[0]);
-      const fields = entry[1]; 
-      
-      // Each entry is a 2-element array: [id, fields_array]
-      resp += `*2\r\n`;
-      resp += `$${Buffer.byteLength(id, 'utf8')}\r\n${id}\r\n`;
-      
-      resp += `*${fields.length}\r\n`;
-      for (const field of fields) {
-        const fStr = String(field);
-        resp += `$${Buffer.byteLength(fStr, 'utf8')}\r\n${fStr}\r\n`;
-      }
-    }
-  }
-  
-  return Buffer.from(resp, 'utf8');
-}
-
-function sendBlpopResponse(connection, key, element) {
-  const keyStr = String(key);
-  const elStr = String(element);
-  const keyLen = Buffer.byteLength(keyStr, 'utf8');
-  const elLen = Buffer.byteLength(elStr, 'utf8');
-  const resp = `*2\r\n$${keyLen}\r\n${keyStr}\r\n$${elLen}\r\n${elStr}\r\n`;
-  connection.write(resp);
 }
 
 function executeCommand(rawCommand, connection, clientInfo) {
@@ -350,8 +106,8 @@ function executeCommand(rawCommand, connection, clientInfo) {
         const element = elementsToAdd.shift();
         
         unblockClient(clientState); // removes them from ALL queues and clears timer
-        sendBlpopResponse(clientState.connection, key, element);
         console.log(`[-->][${clientState.clientInfo}] BLPOP unblocked with element: ${element}`);
+        connection.write(encodeBlpopResponse(key, element));
       }
     }
     if (elementsToAdd.length > 0) {
@@ -494,8 +250,8 @@ function executeCommand(rawCommand, connection, clientInfo) {
     }
     const range = getStreamRange(args[1].toString('utf8'), args[2].toString('utf8'), args[3].toString('utf8'));
     if (range === undefined) {
-      console.log(`[-->][${clientInfo}] Response: NULL Bulk String, no value associated with key ${args[1].toString('utf8')}`);
-      connection.write("$-1\r\n");
+      console.log(`[-->][${clientInfo}] Response: NULL Array, no value associated with key ${args[1].toString('utf8')}`);
+      connection.write("*-1\r\n");
       return;
     }
     console.log(`[-->][${clientInfo}] Response: RESP array of arrays.`);
