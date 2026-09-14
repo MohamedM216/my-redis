@@ -116,4 +116,5 @@ hey
 - XREAD
     ```
     redis-cli -h 127.0.0.1 -p 6380 XREAD STREAMS <key1> <key2> ... <id1> <id2> ...
+    redis-cli -h 127.0.0.1 -p 6380 XREAD BLOCK <milliseconds> STREAMS <key> <id>
     ```

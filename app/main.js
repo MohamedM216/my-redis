@@ -185,7 +185,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
     if (len > 0) {
       const popped = pop(key);
       if (popped && popped.length > 0) {
-        sendBlpopResponse(connection, key, popped[0]);
+        connection.write(encodeBlpopResponse(key, popped[0]));
         return;
       }
     }
@@ -275,10 +275,57 @@ function executeCommand(rawCommand, connection, clientInfo) {
       connection.write("-ERR Unbalanced 'xread' list of streams: for each stream key an ID must be specified\r\n");
       return;
     }
-
+    
     const half = streamArgs.length / 2;
     const keys = streamArgs.slice(0, half);
     const ids = streamArgs.slice(half);
+    
+    if (args[1].toString('utf8').toUpperCase() !== "BLOCK") {
+      if (keys.length > 1) {
+        connection.write("-ERR More than one key with BLOCK option\r\n");
+        return;
+      }
+      const key = keys[0];
+      const entry = getStreamXRead(key, ids[0]); // In case of "BLOCK", it is only one key and one id
+      if (entry && entry.length > 0) {
+        console.log(`[-->][${clientInfo}] Response: XREAD Array of Streams`);
+        connection.write(encodeXReadResponse([key, entry]));
+        return;
+      } else {
+        const timeout = Number(args[2].toString('utf8')); 
+        if (isNaN(timeout) || timeout < 0) {
+          connection.write("-ERR timeout is not a float or out of range\r\n");
+          return;
+        }
+        // if no elements found, block the client
+        const blockId = nextBlockId++;
+        const clientState = {
+          id: blockId,
+          connection,
+          clientInfo,
+          key,
+          timer: null
+        };
+        
+        // Set timeout if > 0. If 0, it blocks indefinitely (no timer set)
+        if (timeout > 0) {
+          clientState.timer = setTimeout(() => {
+            unblockClient(clientState);
+            connection.write("*-1\r\n"); // Null array on timeout
+            console.log(`[-->][${clientInfo}] XREAD timeout reached`);
+          }, timeout * 1000);
+        }
+        
+        // Add client to the queue for the requested key
+        if (!blockedQueues.has(key)) blockedQueues.set(key, []);
+        blockedQueues.get(key).push(clientState);
+        
+        // Attach state to connection so we can clean up if they disconnect
+        connection.blockState = clientState;
+        console.log(`[-->][${clientInfo}] XREAD blocking on keys: ${key} with timeout ${timeout}`);
+        return;
+      }
+    }
 
     let finalResult = [];
     for (let i = 0; i < keys.length; i++) {
@@ -290,7 +337,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
       }
     }
 
-    if (finalResult.length === 0) {
+    if (finalResult.length === 0 && args[1].toString('utf8') !== "BLOCK") {
       connection.write("*-1\r\n");
       return;
     }
