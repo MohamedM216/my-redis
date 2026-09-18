@@ -16,3 +16,25 @@ export function cacheGet(key) {
   }
   return value;
 }
+
+export function increment(key) {
+  let entry = getEntry(key);
+  if (entry === undefined) {
+    setEntry(key, 'string', { value: "1", createdAt: Date.now(), px: Number.MAX_VALUE });
+    return 1;
+  }
+  let value = entry.value;
+  const valStr = value.value;
+  const val = Number(valStr);
+  if (isNaN(val)) {
+    return undefined;
+  }
+  if (val < Number.MAX_VALUE) {
+    const newVal = String(val + 1);
+    deleteKey(key);
+    value.value++;
+    setEntry(key, 'string', value);
+    return newVal;
+  }
+  return undefined;
+}

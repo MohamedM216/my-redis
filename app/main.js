@@ -1,5 +1,5 @@
 import net from "net";
-import { cacheSet, cacheGet } from "./cache.js";
+import { cacheSet, cacheGet, increment } from "./cache.js";
 import { getRange, pop, push, getListLength } from "./list.js"
 import { setStream, getStreamRange, getStreamXRead } from "./stream.js"
 import { getType } from "./store.js";
@@ -343,6 +343,20 @@ function executeCommand(rawCommand, connection, clientInfo) {
     }
     console.log(`[-->][${clientInfo}] Response: XREAD Array of Streams`);
     connection.write(encodeXReadResponse(finalResult));
+  } else if (commandName === "INCR") {
+    if (args.length !== 2) {
+      console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
+      connection.write("-ERR wrong number of arguments for 'incr' command\r\n");
+      return;
+    }
+    const key = args[1].toString('utf8');
+    const ret = increment(key);
+    if (ret === undefined) {
+      connection.write("-ERR value is not an integer or out of range\r\n");
+      return;
+    }
+    console.log(`[-->][${clientInfo}] Response: RESP Integer, value of key: ${key})`);
+    connection.write(`:${ret}\r\n`);
   } else {
     console.log(`[-->][${clientInfo}] Response: Error (unknown command)`);
     connection.write(
