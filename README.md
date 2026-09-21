@@ -124,9 +124,10 @@ hey
     ```
 - MULTI and EXEC
     ```
-    redis-cli -h 127.0.0.1 -p 6380 MULTI    # start a transaction to queue commands
+    redis-cli -h 127.0.0.1 -p 6380  # open in interactive mode
+    MULTI    # start a transaction to queue commands
     <command 1>
     <command 2>
     <...>
-    redis-cli -h 127.0.0.1 -p 6380 EXEC     # execute queued commands and send a RESP array of the result
+    EXEC     # execute queued commands and send a RESP array of the result
     ```

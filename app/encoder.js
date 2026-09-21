@@ -1,3 +1,5 @@
+import { CRLF } from './parser.js';
+
 export function toBuffer(value) {
   if (Buffer.isBuffer(value)) {
     return value;
