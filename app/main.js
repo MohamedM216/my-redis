@@ -26,6 +26,20 @@ function unblockClient(clientState) {
   }
 }
 
+// A fake connection that captures writes instead of sending them
+function createResponseCapture() {
+  const responses = [];
+  return {
+    responses,
+    write(data) {
+      responses.push(data);
+    },
+    end() {},
+    destroy() {},
+    blockState: null
+  };
+}
+
 function executeCommand(rawCommand, connection, clientInfo) {
   if (rawCommand === null || rawCommand === undefined) {
     console.log(`[EXEC][${clientInfo}] Error: invalid command`);
@@ -43,6 +57,14 @@ function executeCommand(rawCommand, connection, clientInfo) {
 
   const commandArg = toBuffer(args[0]);
   const commandName = commandArg.toString("utf8").toUpperCase();
+
+  if (connection.inTransaction) {
+    connection.queuedCommands.push(args);
+    console.log(`[-->][${clientInfo}] QUEUED command: ${commandName} (queue size: ${connection.queuedCommands.length})`);
+    connection.write("+QUEUED\r\n");
+    return;
+  }
+
   console.log(`[EXEC][${clientInfo}] Command: ${commandName} | Args: ${args.length - 1}`);
 
   if (commandName === "PING") {
@@ -357,6 +379,57 @@ function executeCommand(rawCommand, connection, clientInfo) {
     }
     console.log(`[-->][${clientInfo}] Response: RESP Integer, value of key: ${key})`);
     connection.write(`:${ret}\r\n`);
+  } else if (commandName === "MULTI") {
+    if (args.length !== 1) {
+      console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
+      connection.write("-ERR wrong number of arguments for 'multi' command\r\n");
+      return;
+    }
+    if (connection.inTransaction) {
+      console.log(`[-->][${clientInfo}] Response: Error (MULTI calls can not be nested)`);
+      connection.write("-ERR MULTI calls can not be nested\r\n");
+      return;
+    }
+    connection.inTransaction = true;
+    connection.queuedCommands = [];
+    console.log(`[-->][${clientInfo}] Response: simple string (MULTI started)`);
+    connection.write("+OK\r\n");
+  } else if (commandName === "EXEC") {
+    if (args.length !== 1) {
+      console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
+      connection.write("-ERR wrong number of arguments for 'exec' command\r\n");
+      return;
+    }
+    if (!connection.inTransaction) {
+      console.log(`[-->][${clientInfo}] Response: Error (EXEC without MULTI)`);
+      connection.write("-ERR EXEC without MULTI\r\n");
+      return;
+    }
+    const queued = connection.queuedCommands;
+    connection.inTransaction = false; // to prevent queuing commands when executed in EXEC
+    if (queued.length === 0) {
+      console.log(`[-->][${clientInfo}] Response: Empty array`);
+      connection.write("*0\r\n");
+      return;
+    }
+
+    const capturedResponses = [];
+    for (const queuedArgs of queued) {
+      const mock = createResponseCapture();
+      executeCommand(queuedArgs, mock, clientInfo);
+      // Each command should have produced exactly one write
+      if (mock.responses.length > 0) {
+        capturedResponses.push(mock.responses[0]);
+      }
+    }
+
+    let resp = `*${capturedResponses.length}\r\n`;
+    for (const r of capturedResponses) {
+      resp += r.toString();
+    }
+
+    console.log(`[-->][${clientInfo}] Response: EXEC RESP Array with ${capturedResponses.length} results`);
+    connection.write(resp);
   } else {
     console.log(`[-->][${clientInfo}] Response: Error (unknown command)`);
     connection.write(
@@ -370,6 +443,10 @@ const server = net.createServer((connection) => {
   const clientPort = connection.remotePort;
   const clientInfo = `${clientIp}:${clientPort}`;
   console.log(`\n[+] Client connected: ${clientInfo}`);
+
+  // Per-connection transaction state so no cross-contamination
+  connection.inTransaction = false;
+  connection.queuedCommands = [];
 
   let buffer = Buffer.alloc(0);
 
