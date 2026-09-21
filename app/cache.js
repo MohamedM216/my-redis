@@ -1,7 +1,6 @@
 import { REDIS_INT_MAX, REDIS_INT_MIN } from './main.js';
 import { setEntry, getEntry, deleteKey } from './store.js';
 
-// TODO: handle race conditions later e.g. INCR command
 export function cacheSet(key, val, PX = Number.MAX_VALUE) {
   setEntry(key, 'string', { value: val, createdAt: Date.now(), px: Number(PX) });
 }
