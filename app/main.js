@@ -6,6 +6,9 @@ import { getType } from "./store.js";
 import { parseResp, ASTERISK, CRLF } from "./parser.js"
 import { toBuffer, encodeBulkString, encodeArray, encodeBlpopResponse, encodeStreamEntries, encodeXReadResponse } from "./encoder.js"
 
+export const REDIS_INT_MAX = 9223372036854775807;  // 2^63 - 1 (Redis uses 64-bit signed ints)
+export const REDIS_INT_MIN = -9223372036854775808; // -2^63
+
 // Global state for blocking commands
 const blockedQueues = new Map(); // Maps list key -> Array of waiting clients
 let nextBlockId = 1;

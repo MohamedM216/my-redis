@@ -1,3 +1,4 @@
+import { REDIS_INT_MAX, REDIS_INT_MIN } from './main.js';
 import { setEntry, getEntry, deleteKey } from './store.js';
 
 // TODO: handle race conditions later e.g. INCR command
@@ -23,18 +24,17 @@ export function increment(key) {
     setEntry(key, 'string', { value: "1", createdAt: Date.now(), px: Number.MAX_VALUE });
     return 1;
   }
-  let value = entry.value;
-  const valStr = value.value;
+  const valStr = entry.value.value;
   const val = Number(valStr);
-  if (isNaN(val)) {
+
+  if (!Number.isInteger(val) || valStr.includes('.'))
     return undefined;
-  }
-  if (val < Number.MAX_VALUE) {
-    const newVal = String(val + 1);
-    deleteKey(key);
-    value.value++;
-    setEntry(key, 'string', value);
-    return newVal;
-  }
-  return undefined;
+
+  const newVal = val + 1;
+  if (newVal >= REDIS_INT_MAX || newVal <= REDIS_INT_MIN)
+    return undefined;
+
+  entry.value.value = String(newVal);
+  setEntry(key, 'string', entry.value);
+  return newVal;
 }
