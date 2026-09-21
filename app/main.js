@@ -61,7 +61,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
   const commandArg = toBuffer(args[0]);
   const commandName = commandArg.toString("utf8").toUpperCase();
 
-  if (connection.inTransaction) {
+  if (connection.inTransaction && commandName !== "MULTI" && commandName !== "EXEC") {
     connection.queuedCommands.push(args);
     console.log(`[-->][${clientInfo}] QUEUED command: ${commandName} (queue size: ${connection.queuedCommands.length})`);
     connection.write("+QUEUED\r\n");
@@ -132,7 +132,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
         
         unblockClient(clientState); // removes them from ALL queues and clears timer
         console.log(`[-->][${clientState.clientInfo}] BLPOP unblocked with element: ${element}`);
-        connection.write(encodeBlpopResponse(key, element));
+        clientState.connection.write(encodeBlpopResponse(key, element));
       }
     }
     if (elementsToAdd.length > 0) {
@@ -229,7 +229,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
     if (timeout > 0) {
       clientState.timer = setTimeout(() => {
         unblockClient(clientState);
-        connection.write("*-1\r\n"); // Null array on timeout
+        clientState.connection.write("*-1\r\n"); // Null array on timeout
         console.log(`[-->][${clientInfo}] BLPOP timeout reached`);
       }, timeout * 1000);
     }
@@ -282,17 +282,34 @@ function executeCommand(rawCommand, connection, clientInfo) {
     console.log(`[-->][${clientInfo}] Response: RESP array of arrays.`);
     connection.write(encodeStreamEntries(range));
   } else if (commandName === "XREAD") {
-    // find the STREAMS keyword dynamically
+    // find the STREAMS and BLOCK keywords dynamically
     let streamsIndex = -1;
+    let blockIndex = -1;
+    let timeout = 0;
+
     for (let i = 1; i < args.length; i++) {
-      if (args[i].toString('utf8').toUpperCase() === 'STREAMS') {
+      const arg = args[i].toString('utf8').toUpperCase();
+      if (arg === 'STREAMS') {
         streamsIndex = i;
-        break;
+      } else if (arg === 'BLOCK') {
+        blockIndex = i;
       }
     }
     if (streamsIndex === -1) {
       connection.write("-ERR syntax error\r\n");
       return;
+    }
+
+    if (blockIndex !== -1) {
+      if (blockIndex + 1 >= streamsIndex) {
+        connection.write("-ERR syntax error\r\n");
+        return;
+      }
+      timeout = Number(args[blockIndex + 1].toString('utf8'));
+      if (isNaN(timeout) || timeout < 0) {
+        connection.write("-ERR timeout is not a float or out of range\r\n");
+        return;
+      }
     }
 
     const streamArgs = args.slice(streamsIndex + 1).map(x => x.toString('utf8'));
@@ -305,69 +322,47 @@ function executeCommand(rawCommand, connection, clientInfo) {
     const keys = streamArgs.slice(0, half);
     const ids = streamArgs.slice(half);
     
-    if (args[1].toString('utf8').toUpperCase() !== "BLOCK") {
-      if (keys.length > 1) {
-        connection.write("-ERR More than one key with BLOCK option\r\n");
-        return;
-      }
-      const key = keys[0];
-      const entry = getStreamXRead(key, ids[0]); // In case of "BLOCK", it is only one key and one id
-      if (entry && entry.length > 0) {
-        console.log(`[-->][${clientInfo}] Response: XREAD Array of Streams`);
-        connection.write(encodeXReadResponse([key, entry]));
-        return;
-      } else {
-        const timeout = Number(args[2].toString('utf8')); 
-        if (isNaN(timeout) || timeout < 0) {
-          connection.write("-ERR timeout is not a float or out of range\r\n");
-          return;
-        }
-        // if no elements found, block the client
-        const blockId = nextBlockId++;
-        const clientState = {
-          id: blockId,
-          connection,
-          clientInfo,
-          key,
-          timer: null
-        };
-        
-        // Set timeout if > 0. If 0, it blocks indefinitely (no timer set)
-        if (timeout > 0) {
-          clientState.timer = setTimeout(() => {
-            unblockClient(clientState);
-            connection.write("*-1\r\n"); // Null array on timeout
-            console.log(`[-->][${clientInfo}] XREAD timeout reached`);
-          }, timeout * 1000);
-        }
-        
-        // Add client to the queue for the requested key
-        if (!blockedQueues.has(key)) blockedQueues.set(key, []);
-        blockedQueues.get(key).push(clientState);
-        
-        // Attach state to connection so we can clean up if they disconnect
-        connection.blockState = clientState;
-        console.log(`[-->][${clientInfo}] XREAD blocking on keys: ${key} with timeout ${timeout}`);
-        return;
-      }
-    }
-
     let finalResult = [];
     for (let i = 0; i < keys.length; i++) {
-      const key = keys[i];
-      const id = ids[i];
-      const entries = getStreamXRead(key, id);
+      const entries = getStreamXRead(keys[i], ids[i]);
       if (entries && entries.length > 0) {
-        finalResult.push([key, entries]);
+        finalResult.push([keys[i], entries]);
       }
     }
 
-    if (finalResult.length === 0 && args[1].toString('utf8') !== "BLOCK") {
+    if (finalResult.length > 0) {
+      connection.write(encodeXReadResponse(finalResult));
+      return;
+    }
+
+    if (blockIndex === -1) {
       connection.write("*-1\r\n");
       return;
     }
-    console.log(`[-->][${clientInfo}] Response: XREAD Array of Streams`);
-    connection.write(encodeXReadResponse(finalResult));
+     
+    // BLOCK the client
+    const key = keys[0];
+    const blockId = nextBlockId++;
+    const clientState = {
+      id: blockId,
+      connection,
+      clientInfo,
+      key,
+      timer: null
+    };
+    
+    if (timeout > 0) {
+      clientState.timer = setTimeout(() => {
+        unblockClient(clientState);
+        clientState.connection.write("*-1\r\n");
+        console.log(`[-->][${clientInfo}] XREAD timeout reached`);
+      }, timeout * 1000);
+    }
+    
+    if (!blockedQueues.has(key)) blockedQueues.set(key, []);
+    blockedQueues.get(key).push(clientState);
+    connection.blockState = clientState;
+    console.log(`[-->][${clientInfo}] XREAD blocking on key: ${key} with timeout ${timeout}`);
   } else if (commandName === "INCR") {
     if (args.length !== 2) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
@@ -383,6 +378,8 @@ function executeCommand(rawCommand, connection, clientInfo) {
     console.log(`[-->][${clientInfo}] Response: RESP Integer, value of key: ${key})`);
     connection.write(`:${ret}\r\n`);
   } else if (commandName === "MULTI") {
+    // MULTI must make the connection open
+    // then close it with EXEC
     if (args.length !== 1) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
       connection.write("-ERR wrong number of arguments for 'multi' command\r\n");
