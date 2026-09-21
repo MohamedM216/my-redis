@@ -5,6 +5,7 @@ import { setStream, getStreamRange, getStreamXRead } from "./stream.js"
 import { getType } from "./store.js";
 import { parseResp, ASTERISK, CRLF } from "./parser.js"
 import { toBuffer, encodeBulkString, encodeArray, encodeBlpopResponse, encodeStreamEntries, encodeXReadResponse } from "./encoder.js"
+import { Command } from "./commands.js";
 
 export const REDIS_INT_MAX = 9223372036854775807;  // 2^63 - 1 (Redis uses 64-bit signed ints)
 export const REDIS_INT_MIN = -9223372036854775808; // -2^63
@@ -70,7 +71,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
 
   console.log(`[EXEC][${clientInfo}] Command: ${commandName} | Args: ${args.length - 1}`);
 
-  if (commandName === "PING") {
+  if (commandName === Command.PING) {
     if (args.length === 1) {
       console.log(`[-->][${clientInfo}] Response: +PONG`);
       connection.write("+PONG\r\n");
@@ -79,7 +80,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
       console.log(`[-->][${clientInfo}] Response: Bulk string (PING with message)`);
       connection.write(encodeBulkString(args[1]));
     }
-  } else if (commandName === "ECHO") {
+  } else if (commandName === Command.ECHO) {
     if (args.length !== 2) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
       connection.write("-ERR wrong number of arguments for 'echo' command\r\n");
@@ -88,7 +89,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
     const echoVal = args[1].toString('utf8');
     console.log(`[-->][${clientInfo}] Response: Bulk string ("${echoVal.substring(0, 20)}${echoVal.length > 20 ? '...' : ''}")`);
     connection.write(encodeBulkString(args[1]));
-  } else if (commandName === "SET") {
+  } else if (commandName === Command.SET) {
     if (!(args.length === 3 || args.length === 5)) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
       connection.write("-ERR wrong number of arguments for 'set' command\r\n");
@@ -98,7 +99,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
     console.log(`[-->][${clientInfo}] SET key: ${args[1].toString('utf8')} to value: ${args[2].toString('utf8')} with PX: ${args.length === 5 ? Number(args[4].toString('utf8')) : null}`);
     console.log(`[-->][${clientInfo}] Response: +OK`);
     connection.write("+OK\r\n");
-  } else if (commandName === "GET") {
+  } else if (commandName === Command.GET) {
     if (args.length != 2) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
       connection.write("-ERR wrong number of arguments for 'get' command\r\n");
@@ -112,7 +113,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
     }
     console.log(`[-->][${clientInfo}] Response: Bulk String, return value: ${value.toString('utf8')})`);
     connection.write(encodeBulkString(value));
-  } else if (commandName === "RPUSH") {
+  } else if (commandName === Command.RPUSH) {
     if (args.length < 3) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
       connection.write("-ERR wrong number of arguments for 'rpush' command\r\n");
@@ -144,7 +145,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
       console.log(`[-->][${clientInfo}] RPUSH: all elements consumed by blocked clients`);
       connection.write(`:0\r\n`);
     }
-  } else if (commandName === "LRANGE") {
+  } else if (commandName === Command.LRANGE) {
     if (args.length !== 4) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
       connection.write("-ERR wrong number of arguments for 'lrange' command\r\n");
@@ -163,7 +164,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
     }
     console.log(`[-->][${clientInfo}] Response: RESP Array`);
     connection.write(encodeArray(ret));
-  } else if (commandName === "LPUSH") {
+  } else if (commandName === Command.LPUSH) {
     if (args.length < 3) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
       connection.write("-ERR wrong number of arguments for 'lpush' command\r\n");
@@ -175,7 +176,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
     console.log(`[-->][${clientInfo}] LPUSH: push elements ${elements}`);
     console.log(`[-->][${clientInfo}] Response: RESP Integer, length of list: ${ret})`);
     connection.write(`:${ret}\r\n`);
-  } else if (commandName === "LPOP") {
+  } else if (commandName === Command.LPOP) {
     if (args.length < 2) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
       connection.write("-ERR wrong number of arguments for 'lpop' command\r\n");
@@ -193,7 +194,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
     console.log(`[-->][${clientInfo}] LPOP: pop first ${count} elements`);
     console.log(`[-->][${clientInfo}] Response: RESP Array`);
     connection.write(encodeArray(ret));
-  } else if (commandName === "BLPOP") {
+  } else if (commandName === Command.BLPOP) {
     if (args.length < 3) {
       connection.write("-ERR wrong number of arguments for 'blpop' command\r\n");
       return;
@@ -241,7 +242,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
     // Attach state to connection so we can clean up if they disconnect
     connection.blockState = clientState;
     console.log(`[-->][${clientInfo}] BLPOP blocking on keys: ${key} with timeout ${timeout}`);
-  } else if (commandName === "TYPE") {
+  } else if (commandName === Command.TYPE) {
     if (args.length !== 2) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
       connection.write("-ERR wrong number of arguments for 'type' command\r\n");
@@ -252,7 +253,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
     const type = getType(key);
     console.log(`[-->][${clientInfo}] Response: Simple String '${type}'`);
     connection.write(`+${type}\r\n`);
-  } else if (commandName === "XADD") {
+  } else if (commandName === Command.XADD) {
     if (args.length < 5) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
       connection.write("-ERR wrong number of arguments for 'stream' command\r\n");
@@ -267,7 +268,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
     }
     console.log(`[-->][${clientInfo}] Response: Bulk String '${id}'`);
     connection.write(encodeBulkString(id));
-  } else if (commandName === "XRANGE") {
+  } else if (commandName === Command.XRANGE) {
     if (args.length !== 4) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
       connection.write("-ERR wrong number of arguments for 'xrange' command\r\n");
@@ -281,7 +282,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
     }
     console.log(`[-->][${clientInfo}] Response: RESP array of arrays.`);
     connection.write(encodeStreamEntries(range));
-  } else if (commandName === "XREAD") {
+  } else if (commandName === Command.XREAD) {
     // find the STREAMS and BLOCK keywords dynamically
     let streamsIndex = -1;
     let blockIndex = -1;
@@ -363,7 +364,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
     blockedQueues.get(key).push(clientState);
     connection.blockState = clientState;
     console.log(`[-->][${clientInfo}] XREAD blocking on key: ${key} with timeout ${timeout}`);
-  } else if (commandName === "INCR") {
+  } else if (commandName === Command.INCR) {
     if (args.length !== 2) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
       connection.write("-ERR wrong number of arguments for 'incr' command\r\n");
@@ -377,7 +378,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
     }
     console.log(`[-->][${clientInfo}] Response: RESP Integer, value of key: ${key})`);
     connection.write(`:${ret}\r\n`);
-  } else if (commandName === "MULTI") {
+  } else if (commandName === Command.MULTI) {
     // MULTI must make the connection open
     // then close it with EXEC
     if (args.length !== 1) {
@@ -394,7 +395,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
     connection.queuedCommands = [];
     console.log(`[-->][${clientInfo}] Response: simple string (MULTI started)`);
     connection.write("+OK\r\n");
-  } else if (commandName === "EXEC") {
+  } else if (commandName === Command.EXEC) {
     if (args.length !== 1) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
       connection.write("-ERR wrong number of arguments for 'exec' command\r\n");
@@ -430,7 +431,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
 
     console.log(`[-->][${clientInfo}] Response: EXEC RESP Array with ${capturedResponses.length} results`);
     connection.write(resp);
-  } else if (commandName === "DISCARD") {
+  } else if (commandName === Command.DISCARD) {
     if (args.length !== 1) {
       console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
       connection.write("-ERR wrong number of arguments for 'discard' command\r\n");
