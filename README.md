@@ -131,3 +131,4 @@ hey
     <...>
     EXEC     # execute queued commands and send a RESP array of the result
     ```
+    - Use `DISCARD` to abort the opened transaction.

@@ -61,7 +61,7 @@ function executeCommand(rawCommand, connection, clientInfo) {
   const commandArg = toBuffer(args[0]);
   const commandName = commandArg.toString("utf8").toUpperCase();
 
-  if (connection.inTransaction && commandName !== "MULTI" && commandName !== "EXEC") {
+  if (connection.inTransaction && commandName !== "MULTI" && commandName !== "EXEC" && commandName !== "DISCARD") {
     connection.queuedCommands.push(args);
     console.log(`[-->][${clientInfo}] QUEUED command: ${commandName} (queue size: ${connection.queuedCommands.length})`);
     connection.write("+QUEUED\r\n");
@@ -430,6 +430,21 @@ function executeCommand(rawCommand, connection, clientInfo) {
 
     console.log(`[-->][${clientInfo}] Response: EXEC RESP Array with ${capturedResponses.length} results`);
     connection.write(resp);
+  } else if (commandName === "DISCARD") {
+    if (args.length !== 1) {
+      console.log(`[-->][${clientInfo}] Response: Error (wrong number of args)`);
+      connection.write("-ERR wrong number of arguments for 'discard' command\r\n");
+      return;
+    }
+    if (!connection.inTransaction) {
+      console.log(`[-->][${clientInfo}] Response: Error (DISCARD without MULTI)`);
+      connection.write("-ERR DISCARD without MULTI\r\n");
+      return;
+    }
+    connection.inTransaction = false;
+    connection.queuedCommands = [];
+    console.log(`[-->][${clientInfo}] Response: simple string (transaction aborted)`);
+    connection.write("+OK\r\n");
   } else {
     console.log(`[-->][${clientInfo}] Response: Error (unknown command)`);
     connection.write(
